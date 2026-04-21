@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+venv/
+.venv/
+
+# Data — never push raw datasets to GitHub (too large)
+data/raw/
+data/processed/*.csv
+
+# Model weights — too large for GitHub, use HuggingFace Hub instead
+models/
+*.pt
+*.pth
+*.bin
+*.ckpt
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
