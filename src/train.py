@@ -19,9 +19,9 @@ from preprocess import build_dataloaders, compute_class_weights, LABEL_MAP, PROC
 
 DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_CLASSES = len(LABEL_MAP)
-EPOCHS      = 15
+EPOCHS      = 20
 BATCH_SIZE  = 32
-LR          = 3e-4
+LR          = 1e-4
 MODEL_DIR   = Path("models/image_model")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -30,13 +30,28 @@ print(f"Device: {DEVICE}")
 
 def build_model():
     model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+
     for param in model.parameters():
         param.requires_grad = False
-    in_features       = model.classifier[1].in_features
-    model.classifier  = nn.Sequential(
+
+    blocks_to_unfreeze = list(model.features.children())[-3:]
+    for block in blocks_to_unfreeze:
+        for param in block.parameters():
+            param.requires_grad = True
+
+    in_features      = model.classifier[1].in_features
+    model.classifier = nn.Sequential(
+        nn.Dropout(p=0.4),
+        nn.Linear(in_features, 128),
+        nn.ReLU(),
         nn.Dropout(p=0.3),
-        nn.Linear(in_features, NUM_CLASSES),
+        nn.Linear(128, NUM_CLASSES),
     )
+
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total     = sum(p.numel() for p in model.parameters())
+    print(f"Trainable params: {trainable:,} / {total:,}")
+
     return model.to(DEVICE)
 
 
@@ -113,7 +128,10 @@ if __name__ == "__main__":
     weights   = compute_class_weights(PROCESSED / "damage_train.csv").to(DEVICE)
     model     = build_model()
     criterion = nn.CrossEntropyLoss(weight=weights)
-    optimizer = AdamW(model.classifier.parameters(), lr=LR, weight_decay=1e-4)
+    optimizer = AdamW([
+        {"params": [p for p in model.features.parameters() if p.requires_grad], "lr": LR * 0.1},
+        {"params": model.classifier.parameters(), "lr": LR},
+    ], weight_decay=1e-4)
     scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
     history  = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
