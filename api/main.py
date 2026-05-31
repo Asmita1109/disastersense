@@ -1,6 +1,7 @@
 """
 DisasterSense | FastAPI Application
 REST API for multimodal disaster severity prediction.
+Logs every prediction to PostgreSQL.
 """
 
 import sys
@@ -13,9 +14,11 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import torch
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
-from fusion import predict, load_image_model, load_nlp_model
+from fusion import load_image_model, load_nlp_model, predict_image, predict_text, compute_severity
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -27,12 +30,47 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins     = ["*"],
-    allow_methods     = ["*"],
-    allow_headers     = ["*"],
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# ── Load Models on Startup ────────────────────────────────────────────────────
+# ── Database ──────────────────────────────────────────────────────────────────
+
+DB_CONFIG = {
+    "host"    : "localhost",
+    "port"    : 5432,
+    "dbname"  : "disastersense",
+    "user"    : "postgres",
+    "password": "disastersense123",
+}
+
+def get_db():
+    return psycopg2.connect(**DB_CONFIG)
+
+def log_prediction(data: dict):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO predictions (
+                    prediction_id, timestamp, image_prediction, damage_score,
+                    text_prediction, informative_score, severity_score,
+                    severity_level, inference_time_ms
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                data["prediction_id"], data["timestamp"],
+                data["image_prediction"], data["damage_score"],
+                data["text_prediction"], data["informative_score"],
+                data["severity_score"], data["severity_level"],
+                data["inference_time_ms"],
+            ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Models ────────────────────────────────────────────────────────────────────
 
 image_model          = None
 nlp_model, tokenizer = None, None
@@ -46,7 +84,7 @@ async def load_models():
     print("Models loaded ✓")
 
 
-# ── Response Schema ───────────────────────────────────────────────────────────
+# ── Schema ────────────────────────────────────────────────────────────────────
 
 class SeverityResponse(BaseModel):
     prediction_id     : str
@@ -89,21 +127,17 @@ async def predict_severity(
 
     tmp_path = Path(f"tmp_{uuid.uuid4().hex}.jpg")
     try:
-        contents = await image.read()
-        tmp_path.write_bytes(contents)
-
-        from fusion import predict_image, predict_text, compute_severity
+        tmp_path.write_bytes(await image.read())
         image_result = predict_image(image_model, str(tmp_path))
         text_result  = predict_text(nlp_model, tokenizer, text)
         severity     = compute_severity(image_result, text_result)
-
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
 
     inference_ms = round((time.time() - start) * 1000, 2)
 
-    return SeverityResponse(
+    response = SeverityResponse(
         prediction_id     = uuid.uuid4().hex,
         timestamp         = datetime.utcnow().isoformat(),
         image_prediction  = severity["image_prediction"],
@@ -114,6 +148,20 @@ async def predict_severity(
         severity_level    = severity["severity_level"],
         inference_time_ms = inference_ms,
     )
+
+    log_prediction(response.dict())
+    return response
+
+
+@app.get("/predictions")
+def get_predictions(limit: int = 50):
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM predictions ORDER BY timestamp DESC LIMIT %s", (limit,))
+            return cur.fetchall()
+    finally:
+        conn.close()
 
 
 @app.get("/labels")
