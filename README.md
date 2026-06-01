@@ -13,6 +13,15 @@ A production-ready AI system that classifies disaster images and social media te
 
 ---
 
+## Monitoring Dashboard
+
+![Crisis Monitoring Dashboard](outputs/dashboard/dashboard_screenshot.png)
+
+529 test set predictions logged and monitored. Dashboard auto-refreshes every 5 minutes.  
+Submit predictions via the Gradio UI or `/predict` API endpoint to see the dashboard update in real time.
+
+---
+
 ## Architecture
 
 ```
