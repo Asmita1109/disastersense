@@ -40,27 +40,18 @@ image_transform = transforms.Compose([
 # ── Model Download ────────────────────────────────────────────────────────────
 
 def ensure_models():
-    """Download models from HuggingFace Hub if not found locally."""
-    from huggingface_hub import hf_hub_download, snapshot_download
+    from huggingface_hub import hf_hub_download
 
     if not IMAGE_MODEL.exists():
-        print("Downloading image model from HuggingFace...")
+        print("Downloading image model...")
         IMAGE_MODEL.parent.mkdir(parents=True, exist_ok=True)
-        path = hf_hub_download(
-            repo_id=HF_REPO,
-            filename="image_model/best.pt",
-            local_dir="models"
-        )
-        print(f"Downloaded → {path}")
+        hf_hub_download(repo_id=HF_REPO, filename="best.pt", local_dir="models/image_model")
 
     if not NLP_MODEL.exists():
-        print("Downloading NLP model from HuggingFace...")
-        snapshot_download(
-            repo_id=HF_REPO,
-            local_dir="models",
-            allow_patterns="nlp_model/best/*"
-        )
-        print("Downloaded NLP model ✓")
+        print("Downloading NLP model...")
+        NLP_MODEL.mkdir(parents=True, exist_ok=True)
+        for f in ["config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json"]:
+            hf_hub_download(repo_id=HF_REPO, filename=f, local_dir="models/nlp_model/best")
 
 
 # ── Model Loaders ─────────────────────────────────────────────────────────────
