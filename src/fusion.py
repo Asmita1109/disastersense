@@ -2,8 +2,10 @@
 DisasterSense | Fusion Layer
 Combines image damage score and NLP informative score
 into a single crisis severity score (0-100).
+Auto-downloads models from HuggingFace Hub if not found locally.
 """
 
+import os
 import torch
 import torch.nn.functional as F
 from pathlib import Path
@@ -14,19 +16,19 @@ import torch.nn as nn
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-IMAGE_MODEL = Path("models/image_model/best.pt")
-NLP_MODEL   = Path("models/nlp_model/best")
-NLP_NAME    = "cardiffnlp/twitter-roberta-base"
+DEVICE         = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+IMAGE_MODEL    = Path("models/image_model/best.pt")
+NLP_MODEL      = Path("models/nlp_model/best")
+NLP_NAME       = "cardiffnlp/twitter-roberta-base"
+HF_REPO        = "Asmita1109/disastersense-models"
 
-DAMAGE_LABELS = {0: "little_or_no_damage", 1: "mild_damage", 2: "severe_damage"}
-DAMAGE_SCORES = {0: 0.1, 1: 0.5, 2: 1.0}  # damage severity weights
+DAMAGE_LABELS  = {0: "little_or_no_damage", 1: "mild_damage", 2: "severe_damage"}
+DAMAGE_SCORES  = {0: 0.1, 1: 0.5, 2: 1.0}
+IMAGE_WEIGHT   = 0.6
+NLP_WEIGHT     = 0.4
 
-IMAGE_WEIGHT  = 0.6
-NLP_WEIGHT    = 0.4
-
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD  = [0.229, 0.224, 0.225]
+IMAGENET_MEAN  = [0.485, 0.456, 0.406]
+IMAGENET_STD   = [0.229, 0.224, 0.225]
 
 image_transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -35,9 +37,36 @@ image_transform = transforms.Compose([
 ])
 
 
+# ── Model Download ────────────────────────────────────────────────────────────
+
+def ensure_models():
+    """Download models from HuggingFace Hub if not found locally."""
+    from huggingface_hub import hf_hub_download, snapshot_download
+
+    if not IMAGE_MODEL.exists():
+        print("Downloading image model from HuggingFace...")
+        IMAGE_MODEL.parent.mkdir(parents=True, exist_ok=True)
+        path = hf_hub_download(
+            repo_id=HF_REPO,
+            filename="image_model/best.pt",
+            local_dir="models"
+        )
+        print(f"Downloaded → {path}")
+
+    if not NLP_MODEL.exists():
+        print("Downloading NLP model from HuggingFace...")
+        snapshot_download(
+            repo_id=HF_REPO,
+            local_dir="models",
+            allow_patterns="nlp_model/best/*"
+        )
+        print("Downloaded NLP model ✓")
+
+
 # ── Model Loaders ─────────────────────────────────────────────────────────────
 
 def load_image_model():
+    ensure_models()
     model = models.efficientnet_b0(weights=None)
     in_features      = model.classifier[1].in_features
     model.classifier = nn.Sequential(
@@ -53,6 +82,7 @@ def load_image_model():
 
 
 def load_nlp_model():
+    ensure_models()
     tokenizer = AutoTokenizer.from_pretrained(NLP_MODEL)
     model     = AutoModelForSequenceClassification.from_pretrained(NLP_MODEL)
     model.to(DEVICE).eval()
@@ -66,17 +96,15 @@ def predict_image(model, image_path: str) -> dict:
     tensor = image_transform(img).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
-        logits = model(tensor)
-        probs  = F.softmax(logits, dim=1).squeeze().tolist()
+        probs = F.softmax(model(tensor), dim=1).squeeze().tolist()
 
-    pred_idx   = int(torch.tensor(probs).argmax())
-    pred_label = DAMAGE_LABELS[pred_idx]
+    pred_idx     = int(torch.tensor(probs).argmax())
     damage_score = sum(DAMAGE_SCORES[i] * probs[i] for i in range(3))
 
     return {
-        "predicted_class" : pred_label,
-        "probabilities"   : {DAMAGE_LABELS[i]: round(probs[i], 4) for i in range(3)},
-        "damage_score"    : round(damage_score, 4),
+        "predicted_class": DAMAGE_LABELS[pred_idx],
+        "probabilities"  : {DAMAGE_LABELS[i]: round(probs[i], 4) for i in range(3)},
+        "damage_score"   : round(damage_score, 4),
     }
 
 
@@ -85,63 +113,33 @@ def predict_text(model, tokenizer, text: str) -> dict:
         text, max_length=128, padding="max_length",
         truncation=True, return_tensors="pt"
     )
-    input_ids      = encoding["input_ids"].to(DEVICE)
-    attention_mask = encoding["attention_mask"].to(DEVICE)
-
     with torch.no_grad():
-        logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
-        probs  = F.softmax(logits, dim=1).squeeze().tolist()
-
-    informative_score = probs[1]  # probability of being informative
+        probs = F.softmax(
+            model(
+                input_ids=encoding["input_ids"].to(DEVICE),
+                attention_mask=encoding["attention_mask"].to(DEVICE)
+            ).logits, dim=1
+        ).squeeze().tolist()
 
     return {
-        "predicted_class"  : "informative" if informative_score > 0.5 else "not_informative",
-        "informative_score": round(informative_score, 4),
-        "probabilities"    : {
-            "not_informative": round(probs[0], 4),
-            "informative"    : round(probs[1], 4),
-        },
+        "predicted_class"  : "informative" if probs[1] > 0.5 else "not_informative",
+        "informative_score": round(probs[1], 4),
+        "probabilities"    : {"not_informative": round(probs[0], 4), "informative": round(probs[1], 4)},
     }
 
 
 def compute_severity(image_result: dict, text_result: dict) -> dict:
-    damage_score     = image_result["damage_score"]
-    informative_score = text_result["informative_score"]
-
-    raw_score    = (IMAGE_WEIGHT * damage_score) + (NLP_WEIGHT * informative_score)
-    severity     = round(raw_score * 100, 2)
-
-    if severity >= 70:
-        level = "CRITICAL"
-    elif severity >= 45:
-        level = "HIGH"
-    elif severity >= 20:
-        level = "MODERATE"
-    else:
-        level = "LOW"
+    raw      = (IMAGE_WEIGHT * image_result["damage_score"]) + (NLP_WEIGHT * text_result["informative_score"])
+    severity = round(raw * 100, 2)
+    level    = "CRITICAL" if severity >= 70 else "HIGH" if severity >= 45 else "MODERATE" if severity >= 20 else "LOW"
 
     return {
         "severity_score"   : severity,
         "severity_level"   : level,
-        "damage_score"     : damage_score,
-        "informative_score": informative_score,
+        "damage_score"     : image_result["damage_score"],
+        "informative_score": text_result["informative_score"],
         "image_prediction" : image_result["predicted_class"],
         "text_prediction"  : text_result["predicted_class"],
-    }
-
-
-def predict(image_path: str, text: str) -> dict:
-    image_model            = load_image_model()
-    nlp_model, tokenizer   = load_nlp_model()
-
-    image_result = predict_image(image_model, image_path)
-    text_result  = predict_text(nlp_model, tokenizer, text)
-    severity     = compute_severity(image_result, text_result)
-
-    return {
-        "image"   : image_result,
-        "text"    : text_result,
-        "severity": severity,
     }
 
 
@@ -149,28 +147,23 @@ def predict(image_path: str, text: str) -> dict:
 
 if __name__ == "__main__":
     import sys
-
     if len(sys.argv) < 3:
         print("Usage: python fusion.py <image_path> '<tweet_text>'")
         sys.exit(1)
 
-    image_path = sys.argv[1]
-    tweet_text = sys.argv[2]
+    image_model          = load_image_model()
+    nlp_model, tokenizer = load_nlp_model()
 
-    print(f"\nImage : {image_path}")
-    print(f"Text  : {tweet_text}\n")
+    image_result = predict_image(image_model, sys.argv[1])
+    text_result  = predict_text(nlp_model, tokenizer, sys.argv[2])
+    severity     = compute_severity(image_result, text_result)
 
-    result = predict(image_path, tweet_text)
-
-    print(f"── Image Prediction ──────────────────────────────────")
-    print(f"Class        : {result['image']['predicted_class']}")
-    print(f"Damage Score : {result['image']['damage_score']}")
-    print(f"Probabilities: {result['image']['probabilities']}")
-
-    print(f"\n── Text Prediction ───────────────────────────────────")
-    print(f"Class            : {result['text']['predicted_class']}")
-    print(f"Informative Score: {result['text']['informative_score']}")
-
-    print(f"\n── Crisis Severity ───────────────────────────────────")
-    print(f"Score : {result['severity']['severity_score']}/100")
-    print(f"Level : {result['severity']['severity_level']}")
+    print(f"\n── Image ─────────────────────────────────────────────")
+    print(f"Class        : {image_result['predicted_class']}")
+    print(f"Damage Score : {image_result['damage_score']}")
+    print(f"\n── Text ──────────────────────────────────────────────")
+    print(f"Class             : {text_result['predicted_class']}")
+    print(f"Informative Score : {text_result['informative_score']}")
+    print(f"\n── Severity ──────────────────────────────────────────")
+    print(f"Score : {severity['severity_score']}/100")
+    print(f"Level : {severity['severity_level']}")
