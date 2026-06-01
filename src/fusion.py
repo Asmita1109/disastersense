@@ -20,7 +20,7 @@ DEVICE         = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMAGE_MODEL    = Path("models/image_model/best.pt")
 NLP_MODEL      = Path("models/nlp_model/best")
 NLP_NAME       = "cardiffnlp/twitter-roberta-base"
-HF_REPO        = "Asmita1109/disastersense-models"
+HF_REPO        = "AsmitaG11/disastersense-models"
 
 DAMAGE_LABELS  = {0: "little_or_no_damage", 1: "mild_damage", 2: "severe_damage"}
 DAMAGE_SCORES  = {0: 0.1, 1: 0.5, 2: 1.0}
