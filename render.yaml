@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: disastersense-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DB_HOST
+        fromDatabase:
+          name: disastersense-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: disastersense-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: disastersense-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: disastersense-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: disastersense-db
+          property: password
+      - key: HF_TOKEN
+        sync: false
+
+databases:
+  - name: disastersense-db
+    plan: free
