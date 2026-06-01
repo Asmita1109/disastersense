@@ -45,13 +45,21 @@ def ensure_models():
     if not IMAGE_MODEL.exists():
         print("Downloading image model...")
         IMAGE_MODEL.parent.mkdir(parents=True, exist_ok=True)
-        hf_hub_download(repo_id=HF_REPO, filename="best.pt", local_dir="models/image_model")
+        hf_hub_download(
+            repo_id=HF_REPO,
+            filename="image_model/best.pt",
+            local_dir="models",
+        )
 
     if not NLP_MODEL.exists():
         print("Downloading NLP model...")
         NLP_MODEL.mkdir(parents=True, exist_ok=True)
         for f in ["config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json"]:
-            hf_hub_download(repo_id=HF_REPO, filename=f, local_dir="models/nlp_model/best")
+            hf_hub_download(
+                repo_id=HF_REPO,
+                filename=f"nlp_model/best/{f}",
+                local_dir="models",
+            )
 
 
 # ── Model Loaders ─────────────────────────────────────────────────────────────
