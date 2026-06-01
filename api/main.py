@@ -3,7 +3,7 @@ DisasterSense | FastAPI Application
 REST API for multimodal disaster severity prediction.
 Logs every prediction to PostgreSQL.
 """
-
+import os
 import sys
 import uuid
 import time
@@ -38,11 +38,11 @@ app.add_middleware(
 # ── Database ──────────────────────────────────────────────────────────────────
 
 DB_CONFIG = {
-    "host"    : "localhost",
-    "port"    : 5432,
-    "dbname"  : "disastersense",
-    "user"    : "postgres",
-    "password": "disastersense123",
+    "host"    : os.getenv("DB_HOST", "localhost"),
+    "port"    : int(os.getenv("DB_PORT", 5432)),
+    "dbname"  : os.getenv("DB_NAME", "disastersense"),
+    "user"    : os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", "disastersense123"),
 }
 
 def get_db():
