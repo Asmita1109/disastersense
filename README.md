@@ -7,7 +7,7 @@ A production-ready AI system that classifies disaster images and social media te
 
 ## Demo
 
-![DisasterSense Demo](outputs/demo/gradio_demo.png)
+![DisasterSense Demo](outputs/demo/Gradio_UI_demo.png)
 
 **Severity: 84.8/100 — 🔴 CRITICAL** | Image: Severe Damage | Text: Informative
 
