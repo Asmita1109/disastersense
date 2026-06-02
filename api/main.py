@@ -3,12 +3,14 @@ DisasterSense | FastAPI Application
 REST API for multimodal disaster severity prediction.
 Logs every prediction to PostgreSQL.
 """
+
 import os
 import sys
 import uuid
 import time
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +18,8 @@ from pydantic import BaseModel
 import torch
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
+load_dotenv()
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 from fusion import load_image_model, load_nlp_model, predict_image, predict_text, compute_severity
@@ -38,19 +42,21 @@ app.add_middleware(
 # ── Database ──────────────────────────────────────────────────────────────────
 
 DB_CONFIG = {
-    "host"    : os.getenv("PGHOST"),
-    "port"    : int(os.getenv("PGPORT")),
-    "dbname"  : os.getenv("DB_NAME", "railway"),
-    "user"    : os.getenv("PGUSER"),
-    "password": os.getenv("PGPASSWORD"),
+    "host"    : os.getenv("DB_HOST", "localhost"),
+    "port"    : int(os.getenv("DB_PORT", 5432)),
+    "dbname"  : os.getenv("DB_NAME", "disastersense"),
+    "user"    : os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", ""),
 }
+
 
 def get_db():
     return psycopg2.connect(**DB_CONFIG)
 
+
 def log_prediction(data: dict):
-    conn = get_db()
     try:
+        conn = get_db()
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO predictions (
@@ -66,6 +72,8 @@ def log_prediction(data: dict):
                 data["inference_time_ms"],
             ))
         conn.commit()
+    except Exception as e:
+        print(f"DB logging failed: {e}")
     finally:
         conn.close()
 
@@ -74,6 +82,7 @@ def log_prediction(data: dict):
 
 image_model          = None
 nlp_model, tokenizer = None, None
+
 
 @app.on_event("startup")
 async def load_models():
@@ -157,8 +166,8 @@ async def predict_severity(
 
 @app.get("/predictions")
 def get_predictions(limit: int = 50):
-    conn = get_db()
     try:
+        conn = get_db()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM predictions ORDER BY timestamp DESC LIMIT %s", (limit,))
             return cur.fetchall()
