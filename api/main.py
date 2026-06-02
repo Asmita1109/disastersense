@@ -38,11 +38,11 @@ app.add_middleware(
 # ── Database ──────────────────────────────────────────────────────────────────
 
 DB_CONFIG = {
-    "host"    : os.getenv("DB_HOST", "acela.proxy.rlwy.net"),
-    "port"    : int(os.getenv("DB_PORT", 31259)),
+    "host"    : os.getenv("PGHOST"),
+    "port"    : int(os.getenv("PGPORT")),
     "dbname"  : os.getenv("DB_NAME", "railway"),
-    "user"    : os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "njZPDyGkspAbepjwejAiZivCqiieitod"),
+    "user"    : os.getenv("PGUSER"),
+    "password": os.getenv("PGPASSWORD"),
 }
 
 def get_db():
