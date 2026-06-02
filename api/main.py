@@ -38,11 +38,11 @@ app.add_middleware(
 # ── Database ──────────────────────────────────────────────────────────────────
 
 DB_CONFIG = {
-    "host"    : os.getenv("DB_HOST", "localhost"),
-    "port"    : int(os.getenv("DB_PORT", 5432)),
-    "dbname"  : os.getenv("DB_NAME", "disastersense"),
+    "host"    : os.getenv("DB_HOST", "acela.proxy.rlwy.net"),
+    "port"    : int(os.getenv("DB_PORT", 31259)),
+    "dbname"  : os.getenv("DB_NAME", "railway"),
     "user"    : os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "disastersense123"),
+    "password": os.getenv("DB_PASSWORD", "njZPDyGkspAbepjwejAiZivCqiieitod"),
 }
 
 def get_db():
