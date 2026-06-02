@@ -121,9 +121,38 @@ async def predict_severity(
         image_model = load_image_model()
     if nlp_model is None:
         nlp_model, tokenizer = load_nlp_model()
-    
+
     start = time.time()
-    ...
+
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+
+    tmp_path = Path(f"tmp_{uuid.uuid4().hex}.jpg")
+    try:
+        tmp_path.write_bytes(await image.read())
+        image_result = predict_image(image_model, str(tmp_path))
+        text_result  = predict_text(nlp_model, tokenizer, text)
+        severity     = compute_severity(image_result, text_result)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+    inference_ms = round((time.time() - start) * 1000, 2)
+
+    response = SeverityResponse(
+        prediction_id     = uuid.uuid4().hex,
+        timestamp         = datetime.utcnow().isoformat(),
+        image_prediction  = severity["image_prediction"],
+        damage_score      = severity["damage_score"],
+        text_prediction   = severity["text_prediction"],
+        informative_score = severity["informative_score"],
+        severity_score    = severity["severity_score"],
+        severity_level    = severity["severity_level"],
+        inference_time_ms = inference_ms,
+    )
+
+    log_prediction(response.dict())
+    return response
 
 
 @app.get("/predictions")
